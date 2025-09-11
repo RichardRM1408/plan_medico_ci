@@ -2,6 +2,7 @@ CREATE OR REPLACE TABLE `ci-datalake-dev.ci_dtlk_bqd_access_dev.TBL_ONCO_PROTOCO
 WITH base AS (
   SELECT
     -- =======================
+    -- Campos SCRIPTS PROTOCOLOS - CICLO SESIONES - TAREAS
     -- =======================
     -- Protocolo
     onco.HOJA_PROT_PK,
@@ -42,7 +43,7 @@ WITH base AS (
     onco.FECHA_HORA_DEVOL_FARMACIA,
     onco.OBSERVACIONES,
 
-    -- Normalización del encuentro de la tabla ONCO
+    -- Normalización del encuentro - paso adicional se  puede borrar
     SAFE_CAST(REGEXP_REPLACE(TRIM(CAST(onco.ENCUENTRO_PROTOCOLO AS STRING)), r'[^0-9]', '') AS INT64) AS encuentro_norm
   FROM `ci-datalake-dev.ci_dtlk_bqd_access_dev.TBL_ONCOLOGIA_PROTOCOLO_SESION_TAREA_BASE` onco
 ),
@@ -77,7 +78,7 @@ prefa AS (
     PRE.COD_ESPECIALIDAD AS COD_SERVICIO,
     PRE.DES_ESPECIALIDAD AS DES_SERVICIO,
 
-    -- Adicionales
+    -- Campos adicionales tomados en cuenta de tablas prestacional
     PRE.COD_TIPO_CITA,
     PRE.DES_TIPO_CITA,
     PRE.COD_ORIGEN_ATENCION,
@@ -93,14 +94,14 @@ prefa AS (
     PRE.COD_DIAGNOSTICO_03,
     PRE.DES_DIAGNOSTICO_03,
 
-    -- Médico
+    -- Médico - Campos adicionales tomados en cuenta de tablas prestacional
     PRE.COD_MEDICO,
     PRE.NOM_MEDICO,
 
-    -- Sede
+    -- Sede - Campos adicionales tomados en cuenta de tablas prestacional
     PRE.NOM_SEDE,
 
-    -- Normalización del encuentro de OD_PREFACTURA
+    -- Normalización del encuentro - paso adicional se  puede borrar
     SAFE_CAST(REGEXP_REPLACE(TRIM(CAST(PRE.NUM_ENCUENTRO AS STRING)), r'[^0-9]', '') AS INT64) AS num_enc_norm
   FROM `ci-datalake-prod.ci_dtlk_bqd_staging_prod.OD_PREFACTURA` PRE
 ),
@@ -116,11 +117,13 @@ clientes AS (
 
 ),
 
--- Join principal + cálculo de EDAD_HOMOLOGADA y AMBITO
+-- UNION PRINCIPAL + cálculo de EDAD_HOMOLOGADA y AMBITO
 joined AS (
   SELECT
     b.*,
-    p.* EXCEPT(num_enc_norm, FECHA_ATENCION_TS), 
+    p.* EXCEPT(num_enc_norm), -- dejamos FECHA_ATENCION (formateada) para calcuilo de edad y ocultamos el TS en esta proyección
+    --p.* EXCEPT(num_enc_norm, FECHA_ATENCION_TS), -- dejamos FECHA_ATENCION (formateada) para calcuilo de edad y ocultamos el TS en esta proyección
+    -- AMBITO homologado ( DES_UNIDAD_NEGOCIO)
     c.SEXO,
     CASE
       WHEN UPPER(TRIM(p.DES_UNIDAD_NEGOCIO)) LIKE '%AMBULATORIO%' THEN 'Ambulatorio'
@@ -132,7 +135,8 @@ joined AS (
       WHEN c.NAC_FECHA IS NULL THEN NULL
       ELSE DATE_DIFF(DATE(p.FECHA_ATENCION_TS), DATE(c.NAC_FECHA), YEAR)
     END AS EDAD_HOMOLOGADA,
-    p.FECHA_ATENCION_TS
+    -- Guardamos el TS para no recalcular en el siguiente SELECT
+    --p.FECHA_ATENCION_TS
   FROM base b
   LEFT JOIN prefa p
     ON b.encuentro_norm = p.num_enc_norm
@@ -140,9 +144,10 @@ joined AS (
     ON CAST(b.CODIGO_CLIENTE AS STRING) = c.CODIGO_CLIENTE
 )
 
-
+-- Select final (agregamos los rangos usando EDAD_HOMOLOGADA)
 SELECT
 
+  -- CAMPOS DE PROTOCOLO
   HOJA_PROT_PK,
   CODIGO_CLIENTE,
   ENCUENTRO_PROTOCOLO,
@@ -155,6 +160,7 @@ SELECT
   FECHA_FIN_PROTOCOLO,
   FECHA_HORA_REGISTRO,
 
+  -- CAMPOS DE CICLO-SESIONES
   PRES_CICLO_PK,
   CICLO,
   PRES_SESION_CAB_PK,
@@ -167,6 +173,7 @@ SELECT
   FECHA_PREVISTA,
   FECHA_HORA_PROGRAMADA,
 
+  -- CAMPOS DE TAREAS
   PRES_SESION_DET_PK,
   NRO_TAREA,
   TAREA,
@@ -179,7 +186,7 @@ SELECT
   FECHA_HORA_DEVOL_FARMACIA,
   OBSERVACIONES,
 
-  -- ===== PREF =====
+  -- ===== CAMPOS ADICIONALES DE OD_PREFACTURA =====
   NUM_ENCUENTRO,
   COD_PACIENTE,
   NOM_PACIENTE,
@@ -239,6 +246,8 @@ SELECT
     WHEN EDAD_HOMOLOGADA >= 100             THEN '100+'
     ELSE 'Desconocido'
   END AS RANGO_ETARIO_10_ANIOS,
+
+  -- ===== FH ULTIMA ACTUALIZACION PARA VER EN LOOKER LA FECHA DE ACTUALIZACION DE LOS DATOS =====
 
    FORMAT_DATETIME('%Y-%m-%d %H:%M', CURRENT_DATETIME('America/Lima')) AS FH_ULTIMA_ACTUALIZACION
 
