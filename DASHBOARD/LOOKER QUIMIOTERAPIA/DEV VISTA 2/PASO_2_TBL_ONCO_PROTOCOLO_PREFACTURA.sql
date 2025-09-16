@@ -99,6 +99,7 @@ prefa AS (
     PRE.NOM_MEDICO,
 
     -- Sede - Campos adicionales tomados en cuenta de tablas prestacional
+    PRE.COD_SEDE,
     PRE.NOM_SEDE,
 
     -- Normalización del encuentro - paso adicional se  puede borrar
@@ -135,6 +136,7 @@ joined AS (
       WHEN c.NAC_FECHA IS NULL THEN NULL
       ELSE DATE_DIFF(DATE(p.FECHA_ATENCION_TS), DATE(c.NAC_FECHA), YEAR)
     END AS EDAD_HOMOLOGADA,
+    onco.LOCALIZACION_ANATOMICA,
     -- Guardamos el TS para no recalcular en el siguiente SELECT
     --p.FECHA_ATENCION_TS
   FROM base b
@@ -142,6 +144,10 @@ joined AS (
     ON b.encuentro_norm = p.num_enc_norm
   LEFT JOIN clientes c
     ON CAST(b.CODIGO_CLIENTE AS STRING) = c.CODIGO_CLIENTE
+  LEFT JOIN `ci-datalake-dev.ci_dtlk_bqd_staging_dev_RNC.MAESTRO_CIE10_DIAGNOSTICOS` onco  -- Agregado 15/09/2025 a pedido de Irpiri para localización anatomica
+    ON UPPER(TRIM(p.COD_DIAGNOSTICO_01)) = UPPER(TRIM(onco.ICD_COD)) -- Agregado 15/09/2025 a pedido de Irpiri
+   AND onco.APLICA = "S"  -- Agregado 15/09/2025 a pedido de Irpiri
+  WHERE p.COD_SEDE IN ('1','2')   -- Agregado 15/09/2025 a pedido de Irpiri solo para sede lima y san borja
 )
 
 -- Select final (agregamos los rangos usando EDAD_HOMOLOGADA)
@@ -219,6 +225,9 @@ SELECT
   COD_MEDICO,
   NOM_MEDICO,
   NOM_SEDE,
+
+  -- ===== PROVIENE DE LEFT JOIN ENTRE CODIGO DIAGNOSTICO CON MAESTRIO DE CIE10 =====
+  LOCALIZACION_ANATOMICA, -- AGREGADO 15/09/2025 a pedido ed Irpiri
 
   -- ===== EDAD Y RANGOS =====
   SEXO,
