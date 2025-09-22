@@ -136,7 +136,15 @@ joined AS (
       WHEN c.NAC_FECHA IS NULL THEN NULL
       ELSE DATE_DIFF(DATE(p.FECHA_ATENCION_TS), DATE(c.NAC_FECHA), YEAR)
     END AS EDAD_HOMOLOGADA,
-    onco.LOCALIZACION_ANATOMICA,
+    --onco.LOCALIZACION_ANATOMICA,
+
+      -- Columna del maestro con la lógica pedida
+  CASE 
+    WHEN onco.LOCALIZACION_ANATOMICA IS NULL 
+      THEN 'NO ONCOLOGICO'
+    ELSE onco.LOCALIZACION_ANATOMICA
+  END AS LOCALIZACION_ANATOMICA  -- Agregado 17/09/2025 a pedido de Irpiri para localización anatomica
+
     -- Guardamos el TS para no recalcular en el siguiente SELECT
     --p.FECHA_ATENCION_TS
   FROM base b
@@ -144,10 +152,14 @@ joined AS (
     ON b.encuentro_norm = p.num_enc_norm
   LEFT JOIN clientes c
     ON CAST(b.CODIGO_CLIENTE AS STRING) = c.CODIGO_CLIENTE
-  LEFT JOIN `ci-datalake-dev.ci_dtlk_bqd_staging_dev_RNC.MAESTRO_CIE10_DIAGNOSTICOS` onco  -- Agregado 15/09/2025 a pedido de Irpiri para localización anatomica
-    ON UPPER(TRIM(p.COD_DIAGNOSTICO_01)) = UPPER(TRIM(onco.ICD_COD)) -- Agregado 15/09/2025 a pedido de Irpiri
-   AND onco.APLICA = "S"  -- Agregado 15/09/2025 a pedido de Irpiri
+  INNER JOIN `ci-datalake-dev.ci_dtlk_bqd_staging_dev_RNC.MAESTRO_CIE10_DIAGNOSTICOS` onco  -- Agregado 15/09/2025 a pedido de Irpiri para localización anatomica
+  --  ON UPPER(TRIM(p.COD_DIAGNOSTICO_01)) = UPPER(TRIM(onco.ICD_COD)) -- Agregado 15/09/2025 a pedido de Irpiri
+     ON SUBSTR(b.DIAGNOSTICO, 1, 5) = onco.ICD_COD
+     AND onco.APLICA = "S"  -- Agregado 15/09/2025 a pedido de Irpiri
   WHERE p.COD_SEDE IN ('1','2')   -- Agregado 15/09/2025 a pedido de Irpiri solo para sede lima y san borja
+
+
+
 )
 
 -- Select final (agregamos los rangos usando EDAD_HOMOLOGADA)
