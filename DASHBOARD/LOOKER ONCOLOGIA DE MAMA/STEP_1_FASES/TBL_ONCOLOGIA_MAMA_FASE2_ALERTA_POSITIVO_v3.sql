@@ -1,0 +1,98 @@
+CREATE OR REPLACE TABLE `ci-datalake-dev.ci_dtlk_bqd_access_dev.TBL_ONCOLOGIA_MAMA_FASE2_ALERTA_POSITIVO` AS
+
+SELECT
+  rp.CODIGO_CASO,
+  LPAD(CAST(rp.DNI AS STRING), 8, '0') AS DNI_PCTE,
+  cl.NAC_FECHA AS FECHA_NACIMIENTO_PACIENTE,
+
+  -- Fecha diagnóstico
+  CASE 
+    WHEN rp.FECHA_DIAGNOSTICO IS NULL OR rp.FECHA_DIAGNOSTICO = 'nan' 
+      THEN NULL
+    ELSE CAST(LEFT(TRIM(rp.FECHA_DIAGNOSTICO),10) AS DATE) 
+  END AS FCH_DX,
+
+  -- Fecha comunicación alerta
+  CASE 
+    WHEN rp.FECHA_COMUNICACION_ALERTA IS NULL OR rp.FECHA_COMUNICACION_ALERTA = 'nan' 
+      THEN NULL
+    ELSE CAST(LEFT(TRIM(rp.FECHA_COMUNICACION_ALERTA),10) AS DATE) 
+  END AS FCH_COMUNICACION_ALERTA,
+
+  -- Edad en años (usando NAC_FECHA y FCH_COMUNICACION_ALERTA)
+  DATE_DIFF(
+    CASE 
+      WHEN rp.FECHA_COMUNICACION_ALERTA IS NULL OR rp.FECHA_COMUNICACION_ALERTA = 'nan' 
+        THEN NULL
+      ELSE CAST(LEFT(TRIM(rp.FECHA_COMUNICACION_ALERTA),10) AS DATE) 
+    END,
+    DATE(cl.NAC_FECHA),
+    YEAR
+  ) AS EDAD_PACIENTE,
+
+  -- Clasificación grupo etario
+  CASE 
+    WHEN DATE_DIFF(
+           CASE 
+             WHEN rp.FECHA_COMUNICACION_ALERTA IS NULL OR rp.FECHA_COMUNICACION_ALERTA = 'nan' 
+               THEN NULL
+             ELSE CAST(LEFT(TRIM(rp.FECHA_COMUNICACION_ALERTA),10) AS DATE) 
+           END,
+           DATE(cl.NAC_FECHA),
+           YEAR
+         ) < 18 THEN "Pediátrico"
+    WHEN DATE_DIFF(
+           CASE 
+             WHEN rp.FECHA_COMUNICACION_ALERTA IS NULL OR rp.FECHA_COMUNICACION_ALERTA = 'nan' 
+               THEN NULL
+             ELSE CAST(LEFT(TRIM(rp.FECHA_COMUNICACION_ALERTA),10) AS DATE) 
+           END,
+           DATE(cl.NAC_FECHA),
+           YEAR
+         ) BETWEEN 18 AND 39 THEN "Joven adulto"
+    WHEN DATE_DIFF(
+           CASE 
+             WHEN rp.FECHA_COMUNICACION_ALERTA IS NULL OR rp.FECHA_COMUNICACION_ALERTA = 'nan' 
+               THEN NULL
+             ELSE CAST(LEFT(TRIM(rp.FECHA_COMUNICACION_ALERTA),10) AS DATE) 
+           END,
+           DATE(cl.NAC_FECHA),
+           YEAR
+         ) BETWEEN 40 AND 59 THEN "Adulto mediana edad"
+    WHEN DATE_DIFF(
+           CASE 
+             WHEN rp.FECHA_COMUNICACION_ALERTA IS NULL OR rp.FECHA_COMUNICACION_ALERTA = 'nan' 
+               THEN NULL
+             ELSE CAST(LEFT(TRIM(rp.FECHA_COMUNICACION_ALERTA),10) AS DATE) 
+           END,
+           DATE(cl.NAC_FECHA),
+           YEAR
+         ) >= 60 THEN "Adulto mayor"
+    ELSE "Sin clasificar"
+  END AS EDAD_GRUPO,
+
+  -- Historia clínica
+  CASE 
+    WHEN REGEXP_CONTAINS(SPLIT(REPLACE(TRIM(rp.HISTORIA_CLINICA_OA),' ',''), '/')[SAFE_OFFSET(0)], r'^1') 
+      THEN SPLIT(REPLACE(TRIM(rp.HISTORIA_CLINICA_OA),' ',''), '/')[SAFE_OFFSET(0)]
+    WHEN REGEXP_CONTAINS(SPLIT(REPLACE(TRIM(rp.HISTORIA_CLINICA_OA),' ',''), '/')[SAFE_OFFSET(1)], r'^1') 
+      THEN SPLIT(REPLACE(TRIM(rp.HISTORIA_CLINICA_OA),' ',''), '/')[SAFE_OFFSET(1)]
+    ELSE NULL
+  END AS ENCUENTRO_NHC_1,
+
+  -- Encuentro / prestación
+  CASE 
+    WHEN REGEXP_CONTAINS(SPLIT(REPLACE(TRIM(rp.HISTORIA_CLINICA_OA),' ',''), '/')[SAFE_OFFSET(0)], r'^2') 
+      THEN SPLIT(REPLACE(TRIM(rp.HISTORIA_CLINICA_OA),' ',''), '/')[SAFE_OFFSET(0)]
+    WHEN REGEXP_CONTAINS(SPLIT(REPLACE(TRIM(rp.HISTORIA_CLINICA_OA),' ',''), '/')[SAFE_OFFSET(1)], r'^2') 
+      THEN SPLIT(REPLACE(TRIM(rp.HISTORIA_CLINICA_OA),' ',''), '/')[SAFE_OFFSET(1)]
+    ELSE NULL
+  END AS ENCUENTRO_NHC_2,
+
+  -- Traer columna de tipo muestra
+  rp.TIPO_MUESTRA_PRUEBA
+
+FROM `ci-datalake-prod.ci_dtlk_bqd_access_prod.aext_RESULTADO_PATOLOGIA_acc` rp
+LEFT JOIN `ci-datalake-prod.ci_dtlk_bqd_access_prod.xhis6_CLIENTES_acc` cl
+  ON CAST(rp.DNI AS STRING) = CAST(cl.CODIGO1 AS STRING)
+WHERE rp.TIPO_MUESTRA_PRUEBA = 'MAMA';
